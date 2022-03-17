@@ -42,7 +42,6 @@ void addNoiseAndOutliers(Eigen::Matrix<double, 3, Eigen::Dynamic>& tgt) {
 }
 
 int main() {
-  writeLog("test log");
   // Load the .ply file
   teaser::PLYReader reader;
   teaser::PointCloud src_cloud;

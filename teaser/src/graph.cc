@@ -40,7 +40,7 @@ vector<int> teaser::MaxCliqueSolver::estimateCliqueFromInliers(teaser::Graph inl
     }
     std::cout << "Size of estimated maximum clique: " << estimated_max_clique.size() << std::endl;
 
-    return CliqueGraph;
+    return estimated_max_clique;
 }
 
 vector<int> teaser::MaxCliqueSolver::findMaxClique(teaser::Graph graph) {
