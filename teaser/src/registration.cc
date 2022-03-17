@@ -465,7 +465,8 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
     clique_params.kcore_heuristic_threshold = params_.kcore_heuristic_threshold;
 
     teaser::MaxCliqueSolver clique_solver(clique_params);
-    max_clique_ = clique_solver.findMaxClique(inlier_graph_);
+    //max_clique_ = clique_solver.findMaxClique(inlier_graph_);
+    max_clique_ = clique_solver.estimateCliqueFromInliers(inlier_graph_);
     std::sort(max_clique_.begin(), max_clique_.end());
     TEASER_DEBUG_INFO_MSG("Max Clique of scale estimation inliers: ");
 #ifndef NDEBUG

@@ -267,7 +267,8 @@ public:
    * @return a vector of indices of cliques
    */
   std::vector<int> findMaxClique(Graph graph);
-
+  
+  std::vector<int> estimateCliqueFromInliers(Graph graph);
 private:
   Graph graph_;
   Params params_;
