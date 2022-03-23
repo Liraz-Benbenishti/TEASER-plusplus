@@ -10,6 +10,50 @@
 #include "teaser/log.h"
 #include "pmc/pmc.h"
 
+vector<int> teaser::MaxCliqueSolver::topConnectedVertices(teaser::Graph inlier_graph) {
+    std::vector<std::vector<int>> adjList = inlier_graph.getAdjList();
+    std::vector<int> CliqueGraph;
+    CliqueGraph.resize(adjList.size());
+    for (size_t i = 0; i < adjList.size(); i++) {
+        CliqueGraph[adjList[i].size()]++;
+    }
+    int max_adjs = 0;
+    int max_vertices = 0;
+    int num_of_vertices = adjList.size();
+    std::vector<int> estimated_max_clique = { };
+    int minimum_num_of_edges = 0;
+    int count_vertices = 0;
+    int num_of_top_vertices = num_of_vertices / 20;
+    for (size_t i = CliqueGraph.size() - 1; i > 0; i--) {
+        if (minimum_num_of_edges == 0 &&
+              count_vertices + CliqueGraph[i] >= num_of_top_vertices) {
+          minimum_num_of_edges = i;
+        }
+        count_vertices += CliqueGraph[i];
+
+        if (CliqueGraph[i] > max_vertices)
+        {
+                max_vertices = CliqueGraph[i];
+                max_adjs = i;
+        }
+        writeLog(std::to_string(i) + ", " + std::to_string(CliqueGraph[i]));
+    }
+
+    std::cout << max_vertices << " vertices with " << max_adjs << std::endl;
+
+    for (size_t i = 0; i < adjList.size(); i++) {
+        if (adjList[i].size() >= 300 &&
+                adjList[i].size() >= minimum_num_of_edges &&
+                num_of_top_vertices > 0) {
+                        num_of_top_vertices--;
+                        estimated_max_clique.push_back(i);
+        }
+    }
+    std::cout << "Size of estimated maximum clique: " << estimated_max_clique.size() << std::endl;
+
+    return estimated_max_clique;
+}
+
 vector<int> teaser::MaxCliqueSolver::estimateCliqueFromInliers(teaser::Graph inlier_graph) {
     std::vector<std::vector<int>> adjList = inlier_graph.getAdjList();
     std::vector<int> CliqueGraph;

@@ -269,6 +269,7 @@ public:
   std::vector<int> findMaxClique(Graph graph);
   
   std::vector<int> estimateCliqueFromInliers(Graph graph);
+  std::vector<int> topConnectedVertices(Graph inlier_graph);
 private:
   Graph graph_;
   Params params_;
