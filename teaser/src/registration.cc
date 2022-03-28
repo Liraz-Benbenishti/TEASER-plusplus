@@ -280,13 +280,21 @@ void teaser::TLSScaleSolver::solveForScale(const Eigen::Matrix<double, 3, Eigen:
                                            const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst,
                                            double* scale,
                                            Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) {
+  int N = src.cols();
+  Eigen::Matrix<double, 1, Eigen::Dynamic> raw_scales(1, N * (N - 1) / 2);
+  int counter = 0;
+  for (int src_i = 0; src_i < N; src_i++) {
+    for (int dst_i = src_i + 1; dst_i < N; dst_i++) {
+      raw_scales(0, counter) = src.col(src_i).array().square().colwise().sum().array().sqrt().array() / dst.col(dst_i).array().square().colwise().sum().array().sqrt().array();
+    }
+  }
 
-  Eigen::Matrix<double, 1, Eigen::Dynamic> v1_dist =
-      src.array().square().colwise().sum().array().sqrt();
-  Eigen::Matrix<double, 1, Eigen::Dynamic> v2_dist =
-      dst.array().square().colwise().sum().array().sqrt();
+  //Eigen::Matrix<double, 1, Eigen::Dynamic> v1_dist =
+  //    src.array().square().colwise().sum().array().sqrt();
+  //Eigen::Matrix<double, 1, Eigen::Dynamic> v2_dist =
+  //    dst.array().square().colwise().sum().array().sqrt();
 
-  Eigen::Matrix<double, 1, Eigen::Dynamic> raw_scales = v2_dist.array() / v1_dist.array();
+  //Eigen::Matrix<double, 1, Eigen::Dynamic> raw_scales = v2_dist.array() / v1_dist.array();
   double beta = 2 * noise_bound_ * sqrt(cbar2_);
   Eigen::Matrix<double, 1, Eigen::Dynamic> alphas = beta * v1_dist.cwiseInverse();
 
@@ -344,15 +352,15 @@ teaser::RobustRegistrationSolver::RobustRegistrationSolver(
   reset(params);
 }
 
-Eigen::Matrix<double, 3, Eigen::Dynamic>
+void
 teaser::RobustRegistrationSolver::computeTIMs(const Eigen::Matrix<double, 3, Eigen::Dynamic>& v,
                                               Eigen::Matrix<int, 2, Eigen::Dynamic>* map) {
 
   auto N = v.cols();
-  Eigen::Matrix<double, 3, Eigen::Dynamic> vtilde(3, N * (N - 1) / 2);
+  //Eigen::Matrix<double, 3, Eigen::Dynamic> vtilde(3, N * (N - 1) / 2);
   map->resize(2, N * (N - 1) / 2);
 
-#pragma omp parallel for default(none) shared(N, v, vtilde, map)
+#pragma omp parallel for default(none) shared(N, v, map)
   for (size_t i = 0; i < N - 1; i++) {
     // Calculate some important indices
     // For each measurement, we compute the TIMs between itself and all the measurements after it.
@@ -371,7 +379,7 @@ teaser::RobustRegistrationSolver::computeTIMs(const Eigen::Matrix<double, 3, Eig
     Eigen::Matrix<double, 3, Eigen::Dynamic> temp = v - m * Eigen::MatrixXd::Ones(1, N);
 
     // concatenate to the end of the tilde vector
-    vtilde.middleCols(segment_start_idx, segment_cols) = temp.rightCols(segment_cols);
+    //vtilde.middleCols(segment_start_idx, segment_cols) = temp.rightCols(segment_cols);
 
     // populate the index map
     Eigen::Matrix<int, 2, Eigen::Dynamic> map_addition(2, N);
@@ -382,7 +390,7 @@ teaser::RobustRegistrationSolver::computeTIMs(const Eigen::Matrix<double, 3, Eig
     map->middleCols(segment_start_idx, segment_cols) = map_addition.rightCols(segment_cols);
   }
 
-  return vtilde;
+  //return vtilde;
 }
 
 teaser::RegistrationSolution
@@ -431,10 +439,10 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
    *
    * Estimate Translation
    */
-  src_tims_ = computeTIMs(src, &src_tims_map_);
-  dst_tims_ = computeTIMs(dst, &dst_tims_map_);
+  computeTIMs(src, &src_tims_map_);
+  computeTIMs(dst, &dst_tims_map_);
   TEASER_DEBUG_INFO_MSG("Starting scale solver.");
-  solveForScale(src_tims_, dst_tims_);
+  solveForScale(src, dst);
   TEASER_DEBUG_INFO_MSG("Scale estimation complete.");
 
   // Calculate Maximum Clique
@@ -466,7 +474,9 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
 
     teaser::MaxCliqueSolver clique_solver(clique_params);
     //max_clique_ = clique_solver.findMaxClique(inlier_graph_);
-    max_clique_ = clique_solver.estimateCliqueFromInliers(inlier_graph_);
+    //max_clique_ = clique_solver.estimateCliqueFromInliers(inlier_graph_);
+    max_clique_ = clique_solver.topConnectedVertices(inlier_graph_);
+
     std::sort(max_clique_.begin(), max_clique_.end());
     TEASER_DEBUG_INFO_MSG("Max Clique of scale estimation inliers: ");
 #ifndef NDEBUG
@@ -512,19 +522,6 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
       src_tims_map_rotation_(0,i) = leaf;
       src_tims_map_rotation_(1,i) = root;
     }
-  } else {
-    // complete graph
-    TEASER_DEBUG_INFO_MSG("Using complete graph for GNC rotation.");
-    // select the inlier measurements with max clique
-    Eigen::Matrix<double, 3, Eigen::Dynamic> src_inliers(3, max_clique_.size());
-    Eigen::Matrix<double, 3, Eigen::Dynamic> dst_inliers(3, max_clique_.size());
-    for (size_t i = 0; i < max_clique_.size(); ++i) {
-      src_inliers.col(i) = src.col(max_clique_[i]);
-      dst_inliers.col(i) = dst.col(max_clique_[i]);
-    }
-    // construct the TIMs
-    pruned_dst_tims_ = computeTIMs(dst_inliers, &dst_tims_map_rotation_);
-    pruned_src_tims_ = computeTIMs(src_inliers, &src_tims_map_rotation_);
   }
 
   // Remove scaling for rotation estimation

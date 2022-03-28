@@ -479,7 +479,7 @@ public:
    * @param v a 3-by-N matrix
    * @return a 3-by-(N-1)*N matrix representing TIMs
    */
-  Eigen::Matrix<double, 3, Eigen::Dynamic>
+  void
   computeTIMs(const Eigen::Matrix<double, 3, Eigen::Dynamic>& v,
               Eigen::Matrix<int, 2, Eigen::Dynamic>* map);
 
@@ -505,11 +505,11 @@ public:
 
   /**
    * Solve for scale. Assume v2 = s * R * v1, this function estimates s.
-   * @param v1
-   * @param v2
+   * @param src
+   * @param dst
    */
-  double solveForScale(const Eigen::Matrix<double, 3, Eigen::Dynamic>& v1,
-                       const Eigen::Matrix<double, 3, Eigen::Dynamic>& v2);
+  double solveForScale(const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
+                       const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst);
 
   /**
    * Solve for translation.
