@@ -13,6 +13,7 @@
 #include <iostream>
 #include <limits>
 #include <iterator>
+#include <typeinfo>
 
 #include "teaser/utils.h"
 #include "teaser/graph.h"
@@ -285,10 +286,10 @@ void teaser::TLSScaleSolver::solveForScale(const Eigen::Matrix<double, 3, Eigen:
   int counter = 0;
   for (int src_i = 0; src_i < N; src_i++) {
     for (int dst_i = src_i + 1; dst_i < N; dst_i++) {
-      raw_scales(0, counter) = src.col(src_i).array().square().colwise().sum().array().sqrt().array() / dst.col(dst_i).array().square().colwise().sum().array().sqrt().array();
+      //raw_scales(0, counter) = src.col(src_i).array().square().colwise().sum().array().sqrt().array() / dst.col(dst_i).array().square().colwise().sum().array().sqrt().array();
     }
   }
-
+  std::cout << typeid(src).name() << std::endl;
   //Eigen::Matrix<double, 1, Eigen::Dynamic> v1_dist =
   //    src.array().square().colwise().sum().array().sqrt();
   //Eigen::Matrix<double, 1, Eigen::Dynamic> v2_dist =
@@ -296,7 +297,7 @@ void teaser::TLSScaleSolver::solveForScale(const Eigen::Matrix<double, 3, Eigen:
 
   //Eigen::Matrix<double, 1, Eigen::Dynamic> raw_scales = v2_dist.array() / v1_dist.array();
   double beta = 2 * noise_bound_ * sqrt(cbar2_);
-  Eigen::Matrix<double, 1, Eigen::Dynamic> alphas = beta * v1_dist.cwiseInverse();
+  Eigen::Matrix<double, 1, Eigen::Dynamic> alphas = beta * src.array().square().colwise().sum().array().sqrt().cwiseInverse();
 
   tls_estimator_.estimate(raw_scales, alphas, scale, inliers);
 }
@@ -307,7 +308,16 @@ void teaser::ScaleInliersSelector::solveForScale(
     Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) {
   // We assume no scale difference between the two vectors of points.
   *scale = 1;
-
+  int N = src.cols();
+  Eigen::Matrix<double, 1, Eigen::Dynamic> raw_scales(1, N * (N - 1) / 2);
+  int counter = 0;
+  for (int src_i = 0; src_i < N; src_i++) {
+    for (int dst_i = src_i + 1; dst_i < N; dst_i++) {
+      //raw_scales(0, counter) = src.col(src_i).array().square().colwise().sum().array().sqrt().array() / dst.col(dst_i).array().square().colwise().sum().array().sqrt().array();
+    }
+  }
+  std::cout << typeid(src).name() << std::endl;
+  
   Eigen::Matrix<double, 1, Eigen::Dynamic> v1_dist =
       src.array().square().colwise().sum().array().sqrt();
   Eigen::Matrix<double, 1, Eigen::Dynamic> v2_dist =
@@ -474,8 +484,8 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
 
     teaser::MaxCliqueSolver clique_solver(clique_params);
     //max_clique_ = clique_solver.findMaxClique(inlier_graph_);
-    //max_clique_ = clique_solver.estimateCliqueFromInliers(inlier_graph_);
-    max_clique_ = clique_solver.topConnectedVertices(inlier_graph_);
+    max_clique_ = clique_solver.estimateCliqueFromInliers(inlier_graph_);
+    //max_clique_ = clique_solver.topConnectedVertices(inlier_graph_);
 
     std::sort(max_clique_.begin(), max_clique_.end());
     TEASER_DEBUG_INFO_MSG("Max Clique of scale estimation inliers: ");
