@@ -53,6 +53,10 @@ public:
   virtual void solveForScale(const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
                              const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst, double* scale,
                              Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) = 0;
+
+  virtual void solveForScaleMemoryOpt(const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
+                             const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst, double* scale,
+                             Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) = 0;
 };
 
 /**
@@ -151,6 +155,11 @@ public:
                      const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst, double* scale,
                      Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) override;
 
+void solveForScaleMemoryOpt(const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
+                                           const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst,
+                                           double* scale,
+                                           Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) override;
+
 private:
   double noise_bound_;
   double cbar2_; // maximal allowed residual^2 to noise bound^2 ratio
@@ -176,6 +185,10 @@ public:
    * @param inliers [out] a row vector of booleans indicating whether a measurement is an inlier
    */
   void solveForScale(const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
+                     const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst, double* scale,
+                     Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) override;
+
+    void solveForScaleMemoryOpt(const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
                      const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst, double* scale,
                      Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) override;
 
@@ -480,8 +493,12 @@ public:
    * @return a 3-by-(N-1)*N matrix representing TIMs
    */
   void
-  computeTIMs(const Eigen::Matrix<double, 3, Eigen::Dynamic>& v,
+  computeTIMsMemoryOpt(const Eigen::Matrix<double, 3, Eigen::Dynamic>& v,
               Eigen::Matrix<int, 2, Eigen::Dynamic>* map);
+
+Eigen::Matrix<double, 3, Eigen::Dynamic>
+computeTIMs(const Eigen::Matrix<double, 3, Eigen::Dynamic>& v,
+                                              Eigen::Matrix<int, 2, Eigen::Dynamic>* map);
 
   /**
    * Solve for scale, translation and rotation.

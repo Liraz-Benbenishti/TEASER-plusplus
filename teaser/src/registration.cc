@@ -281,15 +281,52 @@ void teaser::TLSScaleSolver::solveForScale(const Eigen::Matrix<double, 3, Eigen:
                                            const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst,
                                            double* scale,
                                            Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) {
+
+  Eigen::Matrix<double, 1, Eigen::Dynamic> v1_dist =
+      src.array().square().colwise().sum().array().sqrt();
+  Eigen::Matrix<double, 1, Eigen::Dynamic> v2_dist =
+      dst.array().square().colwise().sum().array().sqrt();
+
+  Eigen::Matrix<double, 1, Eigen::Dynamic> raw_scales = v2_dist.array() / v1_dist.array();
+  double beta = 2 * noise_bound_ * sqrt(cbar2_);
+  Eigen::Matrix<double, 1, Eigen::Dynamic> alphas = beta * v1_dist.cwiseInverse();
+
+  tls_estimator_.estimate(raw_scales, alphas, scale, inliers);
+}
+
+void teaser::ScaleInliersSelector::solveForScale(
+    const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
+    const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst, double* scale,
+    Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) {
+  // We assume no scale difference between the two vectors of points.
+  *scale = 1;
+
+  Eigen::Matrix<double, 1, Eigen::Dynamic> v1_dist =
+      src.array().square().colwise().sum().array().sqrt();
+  Eigen::Matrix<double, 1, Eigen::Dynamic> v2_dist =
+      dst.array().square().colwise().sum().array().sqrt();
+  double beta = 2 * noise_bound_ * sqrt(cbar2_);
+
+  // A pair-wise correspondence is an inlier if it passes the following test:
+  // abs(|dst| - |src|) is within maximum allowed error
+  *inliers = (v1_dist.array() - v2_dist.array()).array().abs() <= beta;
+}
+
+void teaser::TLSScaleSolver::solveForScaleMemoryOpt(const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
+                                           const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst,
+                                           double* scale,
+                                           Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) {
+  double v1, v2;
   int N = src.cols();
   Eigen::Matrix<double, 1, Eigen::Dynamic> raw_scales(1, N * (N - 1) / 2);
   int counter = 0;
   for (int src_i = 0; src_i < N; src_i++) {
     for (int dst_i = src_i + 1; dst_i < N; dst_i++) {
-      //raw_scales(0, counter) = src.col(src_i).array().square().colwise().sum().array().sqrt().array() / dst.col(dst_i).array().square().colwise().sum().array().sqrt().array();
-    }
+      v1 = src.col(src_i).array().square().colwise().sum().array().sqrt().array().eval()(0);
+      v2 = dst.col(dst_i).array().square().colwise().sum().array().sqrt().array().eval()(0);
+      raw_scales(0, counter) = v1/v2;
+      }
   }
-  std::cout << typeid(src).name() << std::endl;
   //Eigen::Matrix<double, 1, Eigen::Dynamic> v1_dist =
   //    src.array().square().colwise().sum().array().sqrt();
   //Eigen::Matrix<double, 1, Eigen::Dynamic> v2_dist =
@@ -302,32 +339,36 @@ void teaser::TLSScaleSolver::solveForScale(const Eigen::Matrix<double, 3, Eigen:
   tls_estimator_.estimate(raw_scales, alphas, scale, inliers);
 }
 
-void teaser::ScaleInliersSelector::solveForScale(
+void teaser::ScaleInliersSelector::solveForScaleMemoryOpt(
     const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
     const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst, double* scale,
     Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) {
   // We assume no scale difference between the two vectors of points.
   *scale = 1;
+
+  double v1, v2, dist_diff;
   int N = src.cols();
-  Eigen::Matrix<double, 1, Eigen::Dynamic> raw_scales(1, N * (N - 1) / 2);
+  double beta = 2 * noise_bound_ * sqrt(cbar2_);
+  
+  // A pair-wise correspondence is an inlier if it passes the following test:
+  // abs(|dst| - |src|) is within maximum allowed error
+
   int counter = 0;
-  for (int src_i = 0; src_i < N; src_i++) {
-    for (int dst_i = src_i + 1; dst_i < N; dst_i++) {
-      //raw_scales(0, counter) = src.col(src_i).array().square().colwise().sum().array().sqrt().array() / dst.col(dst_i).array().square().colwise().sum().array().sqrt().array();
+  for (int cloud_i = 0; cloud_i < N; cloud_i++) {
+    for (int cloud_j = cloud_i + 1; cloud_j < N; cloud_j++) {
+      v1 = (src.col(cloud_i).array() - src.col(cloud_j).array()).array().square().colwise().sum().array().sqrt().array().eval()(0);
+      v2 = (dst.col(cloud_i).array() - dst.col(cloud_j).array()).array().square().colwise().sum().array().sqrt().array().eval()(0);
+      dist_diff =  abs(v1 - v2);
+
+      (*inliers)(0, counter++) = dist_diff <= beta;
     }
   }
-  std::cout << typeid(src).name() << std::endl;
-  
+
   Eigen::Matrix<double, 1, Eigen::Dynamic> v1_dist =
       src.array().square().colwise().sum().array().sqrt();
   Eigen::Matrix<double, 1, Eigen::Dynamic> v2_dist =
       dst.array().square().colwise().sum().array().sqrt();
-  double beta = 2 * noise_bound_ * sqrt(cbar2_);
-
-  // A pair-wise correspondence is an inlier if it passes the following test:
-  // abs(|dst| - |src|) is within maximum allowed error
-  *inliers = (v1_dist.array() - v2_dist.array()).array().abs() <= beta;
-}
+  }
 
 void teaser::TLSTranslationSolver::solveForTranslation(
     const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
@@ -362,8 +403,49 @@ teaser::RobustRegistrationSolver::RobustRegistrationSolver(
   reset(params);
 }
 
-void
+Eigen::Matrix<double, 3, Eigen::Dynamic>
 teaser::RobustRegistrationSolver::computeTIMs(const Eigen::Matrix<double, 3, Eigen::Dynamic>& v,
+                                              Eigen::Matrix<int, 2, Eigen::Dynamic>* map) {
+
+  auto N = v.cols();
+  Eigen::Matrix<double, 3, Eigen::Dynamic> vtilde(3, N * (N - 1) / 2);
+  map->resize(2, N * (N - 1) / 2);
+
+#pragma omp parallel for default(none) shared(N, v, vtilde, map)
+  for (size_t i = 0; i < N - 1; i++) {
+    // Calculate some important indices
+    // For each measurement, we compute the TIMs between itself and all the measurements after it.
+    // For example:
+    // i=0: add N-1 TIMs
+    // i=1: add N-2 TIMs
+    // etc..
+    // i=k: add N-1-k TIMs
+    // And by arithmatic series, we can get the starting index of each segment be:
+    // k*N - k*(k+1)/2
+    size_t segment_start_idx = i * N - i * (i + 1) / 2;
+    size_t segment_cols = N - 1 - i;
+
+    // calculate TIM
+    Eigen::Matrix<double, 3, 1> m = v.col(i);
+    Eigen::Matrix<double, 3, Eigen::Dynamic> temp = v - m * Eigen::MatrixXd::Ones(1, N);
+
+    // concatenate to the end of the tilde vector
+    vtilde.middleCols(segment_start_idx, segment_cols) = temp.rightCols(segment_cols);
+
+    // populate the index map
+    Eigen::Matrix<int, 2, Eigen::Dynamic> map_addition(2, N);
+    for (size_t j = 0; j < N; ++j) {
+      map_addition(0, j) = i;
+      map_addition(1, j) = j;
+    }
+    map->middleCols(segment_start_idx, segment_cols) = map_addition.rightCols(segment_cols);
+  }
+
+  return vtilde;
+}
+
+void
+teaser::RobustRegistrationSolver::computeTIMsMemoryOpt(const Eigen::Matrix<double, 3, Eigen::Dynamic>& v,
                                               Eigen::Matrix<int, 2, Eigen::Dynamic>* map) {
 
   auto N = v.cols();
@@ -449,8 +531,8 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
    *
    * Estimate Translation
    */
-  computeTIMs(src, &src_tims_map_);
-  computeTIMs(dst, &dst_tims_map_);
+  computeTIMsMemoryOpt(src, &src_tims_map_);
+  computeTIMsMemoryOpt(dst, &src_tims_map_);
   TEASER_DEBUG_INFO_MSG("Starting scale solver.");
   solveForScale(src, dst);
   TEASER_DEBUG_INFO_MSG("Scale estimation complete.");
@@ -580,8 +662,9 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
 double teaser::RobustRegistrationSolver::solveForScale(
     const Eigen::Matrix<double, 3, Eigen::Dynamic>& v1,
     const Eigen::Matrix<double, 3, Eigen::Dynamic>& v2) {
-  scale_inliers_mask_.resize(1, v1.cols());
-  scale_solver_->solveForScale(v1, v2, &(solution_.scale), &scale_inliers_mask_);
+      int N = v1.cols();
+  scale_inliers_mask_.resize(1, N * (N - 1) / 2);
+  scale_solver_->solveForScaleMemoryOpt(v1, v2, &(solution_.scale), &scale_inliers_mask_);
   return solution_.scale;
 }
 
