@@ -20,6 +20,7 @@ inline double getAngularError(Eigen::Matrix3d R_exp, Eigen::Matrix3d R_est) {
 }
 
 void addNoiseAndOutliers(Eigen::Matrix<double, 3, Eigen::Dynamic>& tgt) {
+  //int N_OUTLIERS = tgt.size() * 90 / 100;
   // Add uniform noise
   Eigen::Matrix<double, 3, Eigen::Dynamic> noise =
       Eigen::Matrix<double, 3, Eigen::Dynamic>::Random(3, tgt.cols()) * NOISE_BOUND;

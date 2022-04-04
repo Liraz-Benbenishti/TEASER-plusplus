@@ -13,6 +13,7 @@
 #include <iostream>
 #include <limits>
 #include <iterator>
+#include <typeinfo>
 
 #include "teaser/utils.h"
 #include "teaser/graph.h"
@@ -311,6 +312,88 @@ void teaser::ScaleInliersSelector::solveForScale(
   *inliers = (v1_dist.array() - v2_dist.array()).array().abs() <= beta;
 }
 
+void teaser::TLSScaleSolver::solveForScaleMemoryOpt(const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
+                                           const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst,
+                                           double* scale,
+                                           Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) {
+  double v1, v2;
+  int N = src.cols();
+  Eigen::Matrix<double, 1, Eigen::Dynamic> raw_scales(1, N * (N - 1) / 2);
+  int counter = 0;
+  for (int src_i = 0; src_i < N; src_i++) {
+    for (int dst_i = src_i + 1; dst_i < N; dst_i++) {
+      v1 = src.col(src_i).array().square().colwise().sum().array().sqrt().array().eval()(0);
+      v2 = dst.col(dst_i).array().square().colwise().sum().array().sqrt().array().eval()(0);
+      raw_scales(0, counter) = v1/v2;
+      }
+  }
+  //Eigen::Matrix<double, 1, Eigen::Dynamic> v1_dist =
+  //    src.array().square().colwise().sum().array().sqrt();
+  //Eigen::Matrix<double, 1, Eigen::Dynamic> v2_dist =
+  //    dst.array().square().colwise().sum().array().sqrt();
+
+  //Eigen::Matrix<double, 1, Eigen::Dynamic> raw_scales = v2_dist.array() / v1_dist.array();
+  double beta = 2 * noise_bound_ * sqrt(cbar2_);
+  Eigen::Matrix<double, 1, Eigen::Dynamic> alphas = beta * src.array().square().colwise().sum().array().sqrt().cwiseInverse();
+
+  tls_estimator_.estimate(raw_scales, alphas, scale, inliers);
+}
+
+void teaser::ScaleInliersSelector::solveForScaleMemoryOpt(
+    const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
+    const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst, double* scale,
+    Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) {
+  // We assume no scale difference between the two vectors of points.
+  *scale = 1;
+
+  double v1, v2, dist_diff;
+  int N = src.cols();
+  double beta = 2 * noise_bound_ * sqrt(cbar2_);
+  
+  // A pair-wise correspondence is an inlier if it passes the following test:
+  // abs(|dst| - |src|) is within maximum allowed error
+
+  int counter = 0;
+  for (int cloud_i = 0; cloud_i < N; cloud_i++) {
+    for (int cloud_j = cloud_i + 1; cloud_j < N; cloud_j++) {
+      v1 = (src.col(cloud_i).array() - src.col(cloud_j).array()).array().square().colwise().sum().array().sqrt().array().eval()(0);
+      v2 = (dst.col(cloud_i).array() - dst.col(cloud_j).array()).array().square().colwise().sum().array().sqrt().array().eval()(0);
+      dist_diff =  abs(v1 - v2);
+
+      (*inliers)(0, counter++) = dist_diff <= beta;
+    }
+  }
+}
+
+  void teaser::RobustRegistrationSolver::computeTIMsAndScale(
+    const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
+    const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst,
+    double* scale) {
+
+  // We assume no scale difference between the two vectors of points.
+  *scale = 1;
+  inlier_graph_.populateVertices(src.cols());
+  double v1, v2, dist_diff;
+  int N = src.cols();
+  double beta = 0.1;// * noise_bound * sqrt(cbar2);
+
+  // A pair-wise correspondence is an inlier if it passes the following test:
+  // abs(|dst| - |src|) is within maximum allowed error
+
+  //int counter = 0;
+  for (int cloud_i = 0; cloud_i < N; cloud_i++) {
+    for (int cloud_j = cloud_i + 1; cloud_j < N; cloud_j++) {
+      v1 = (src.col(cloud_i).array() - src.col(cloud_j).array()).array().square().colwise().sum().array().sqrt().array().eval()(0);
+      v2 = (dst.col(cloud_i).array() - dst.col(cloud_j).array()).array().square().colwise().sum().array().sqrt().array().eval()(0);
+      dist_diff =  abs(v1 - v2);
+
+      if (dist_diff <= beta) {
+        inlier_graph_.addEdge(cloud_i, cloud_j);
+      }
+    }
+  }
+}
+
 void teaser::TLSTranslationSolver::solveForTranslation(
     const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
     const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst, Eigen::Vector3d* translation,
@@ -385,6 +468,47 @@ teaser::RobustRegistrationSolver::computeTIMs(const Eigen::Matrix<double, 3, Eig
   return vtilde;
 }
 
+void
+teaser::RobustRegistrationSolver::computeTIMsMemoryOpt(const Eigen::Matrix<double, 3, Eigen::Dynamic>& v,
+                                              Eigen::Matrix<int, 2, Eigen::Dynamic>* map) {
+
+  auto N = v.cols();
+  //Eigen::Matrix<double, 3, Eigen::Dynamic> vtilde(3, N * (N - 1) / 2);
+  map->resize(2, N * (N - 1) / 2);
+
+#pragma omp parallel for default(none) shared(N, v, map)
+  for (size_t i = 0; i < N - 1; i++) {
+    // Calculate some important indices
+    // For each measurement, we compute the TIMs between itself and all the measurements after it.
+    // For example:
+    // i=0: add N-1 TIMs
+    // i=1: add N-2 TIMs
+    // etc..
+    // i=k: add N-1-k TIMs
+    // And by arithmatic series, we can get the starting index of each segment be:
+    // k*N - k*(k+1)/2
+    size_t segment_start_idx = i * N - i * (i + 1) / 2;
+    size_t segment_cols = N - 1 - i;
+
+    // calculate TIM
+    Eigen::Matrix<double, 3, 1> m = v.col(i);
+    Eigen::Matrix<double, 3, Eigen::Dynamic> temp = v - m * Eigen::MatrixXd::Ones(1, N);
+
+    // concatenate to the end of the tilde vector
+    //vtilde.middleCols(segment_start_idx, segment_cols) = temp.rightCols(segment_cols);
+
+    // populate the index map
+    Eigen::Matrix<int, 2, Eigen::Dynamic> map_addition(2, N);
+    for (size_t j = 0; j < N; ++j) {
+      map_addition(0, j) = i;
+      map_addition(1, j) = j;
+    }
+    map->middleCols(segment_start_idx, segment_cols) = map_addition.rightCols(segment_cols);
+  }
+
+  //return vtilde;
+}
+
 teaser::RegistrationSolution
 teaser::RobustRegistrationSolver::solve(const teaser::PointCloud& src_cloud,
                                         const teaser::PointCloud& dst_cloud,
@@ -431,11 +555,9 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
    *
    * Estimate Translation
    */
-  src_tims_ = computeTIMs(src, &src_tims_map_);
-  dst_tims_ = computeTIMs(dst, &dst_tims_map_);
-  TEASER_DEBUG_INFO_MSG("Starting scale solver.");
-  solveForScale(src_tims_, dst_tims_);
-  TEASER_DEBUG_INFO_MSG("Scale estimation complete.");
+  TEASER_DEBUG_INFO_MSG("Starting TIMs calculation and inliers graph creation.");
+  computeTIMsAndScale(src, dst, &(solution_.scale));
+  TEASER_DEBUG_INFO_MSG("TIMs calculation and inliers graph creation complete.");
 
   // Calculate Maximum Clique
   // Note: the max_clique_ vector holds the indices of original measurements that are within the
@@ -445,13 +567,7 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
     // Create inlier graph: A graph with (indices of) original measurements as vertices, and edges
     // only when the TIM between two measurements are inliers. Note: src_tims_map_ is the same as
     // dst_tim_map_
-    inlier_graph_.populateVertices(src.cols());
-    for (size_t i = 0; i < scale_inliers_mask_.cols(); ++i) {
-      if (scale_inliers_mask_(0, i)) {
-        inlier_graph_.addEdge(src_tims_map_(0, i), src_tims_map_(1, i));
-      }
-    }
-
+    
     teaser::MaxCliqueSolver::Params clique_params;
 
     if (params_.inlier_selection_mode == INLIER_SELECTION_MODE::PMC_EXACT) {
@@ -467,6 +583,8 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
     teaser::MaxCliqueSolver clique_solver(clique_params);
     //max_clique_ = clique_solver.findMaxClique(inlier_graph_);
     max_clique_ = clique_solver.estimateCliqueFromInliers(inlier_graph_);
+    //max_clique_ = clique_solver.topConnectedVertices(inlier_graph_);
+
     std::sort(max_clique_.begin(), max_clique_.end());
     TEASER_DEBUG_INFO_MSG("Max Clique of scale estimation inliers: ");
 #ifndef NDEBUG
@@ -478,12 +596,6 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
       TEASER_DEBUG_INFO_MSG("Clique size too small. Abort.");
       solution_.valid = false;
       return solution_;
-    }
-  } else {
-    // not using clique filtering is equivalent to saying all measurements are in the max clique
-    max_clique_.reserve(src.cols());
-    for (size_t i = 0; i < src.cols(); ++i) {
-      max_clique_.push_back(i);
     }
   }
 
@@ -512,19 +624,6 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
       src_tims_map_rotation_(0,i) = leaf;
       src_tims_map_rotation_(1,i) = root;
     }
-  } else {
-    // complete graph
-    TEASER_DEBUG_INFO_MSG("Using complete graph for GNC rotation.");
-    // select the inlier measurements with max clique
-    Eigen::Matrix<double, 3, Eigen::Dynamic> src_inliers(3, max_clique_.size());
-    Eigen::Matrix<double, 3, Eigen::Dynamic> dst_inliers(3, max_clique_.size());
-    for (size_t i = 0; i < max_clique_.size(); ++i) {
-      src_inliers.col(i) = src.col(max_clique_[i]);
-      dst_inliers.col(i) = dst.col(max_clique_[i]);
-    }
-    // construct the TIMs
-    pruned_dst_tims_ = computeTIMs(dst_inliers, &dst_tims_map_rotation_);
-    pruned_src_tims_ = computeTIMs(src_inliers, &src_tims_map_rotation_);
   }
 
   // Remove scaling for rotation estimation
@@ -573,8 +672,9 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
 double teaser::RobustRegistrationSolver::solveForScale(
     const Eigen::Matrix<double, 3, Eigen::Dynamic>& v1,
     const Eigen::Matrix<double, 3, Eigen::Dynamic>& v2) {
-  scale_inliers_mask_.resize(1, v1.cols());
-  scale_solver_->solveForScale(v1, v2, &(solution_.scale), &scale_inliers_mask_);
+      int N = v1.cols();
+  scale_inliers_mask_.resize(1, N * (N - 1) / 2);
+  scale_solver_->solveForScaleMemoryOpt(v1, v2, &(solution_.scale), &scale_inliers_mask_);
   return solution_.scale;
 }
 
