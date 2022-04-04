@@ -363,12 +363,36 @@ void teaser::ScaleInliersSelector::solveForScaleMemoryOpt(
       (*inliers)(0, counter++) = dist_diff <= beta;
     }
   }
+}
 
-  Eigen::Matrix<double, 1, Eigen::Dynamic> v1_dist =
-      src.array().square().colwise().sum().array().sqrt();
-  Eigen::Matrix<double, 1, Eigen::Dynamic> v2_dist =
-      dst.array().square().colwise().sum().array().sqrt();
+  void teaser::RobustRegistrationSolver::computeTIMsAndScale(
+    const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
+    const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst,
+    double* scale) {
+
+  // We assume no scale difference between the two vectors of points.
+  *scale = 1;
+  inlier_graph_.populateVertices(src.cols());
+  double v1, v2, dist_diff;
+  int N = src.cols();
+  double beta = 0.1;// * noise_bound * sqrt(cbar2);
+
+  // A pair-wise correspondence is an inlier if it passes the following test:
+  // abs(|dst| - |src|) is within maximum allowed error
+
+  //int counter = 0;
+  for (int cloud_i = 0; cloud_i < N; cloud_i++) {
+    for (int cloud_j = cloud_i + 1; cloud_j < N; cloud_j++) {
+      v1 = (src.col(cloud_i).array() - src.col(cloud_j).array()).array().square().colwise().sum().array().sqrt().array().eval()(0);
+      v2 = (dst.col(cloud_i).array() - dst.col(cloud_j).array()).array().square().colwise().sum().array().sqrt().array().eval()(0);
+      dist_diff =  abs(v1 - v2);
+
+      if (dist_diff <= beta) {
+        inlier_graph_.addEdge(cloud_i, cloud_j);
+      }
+    }
   }
+}
 
 void teaser::TLSTranslationSolver::solveForTranslation(
     const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
@@ -531,11 +555,9 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
    *
    * Estimate Translation
    */
-  computeTIMsMemoryOpt(src, &src_tims_map_);
-  computeTIMsMemoryOpt(dst, &src_tims_map_);
-  TEASER_DEBUG_INFO_MSG("Starting scale solver.");
-  solveForScale(src, dst);
-  TEASER_DEBUG_INFO_MSG("Scale estimation complete.");
+  TEASER_DEBUG_INFO_MSG("Starting TIMs calculation and inliers graph creation.");
+  computeTIMsAndScale(src, dst, &(solution_.scale));
+  TEASER_DEBUG_INFO_MSG("TIMs calculation and inliers graph creation complete.");
 
   // Calculate Maximum Clique
   // Note: the max_clique_ vector holds the indices of original measurements that are within the
@@ -545,13 +567,7 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
     // Create inlier graph: A graph with (indices of) original measurements as vertices, and edges
     // only when the TIM between two measurements are inliers. Note: src_tims_map_ is the same as
     // dst_tim_map_
-    inlier_graph_.populateVertices(src.cols());
-    for (size_t i = 0; i < scale_inliers_mask_.cols(); ++i) {
-      if (scale_inliers_mask_(0, i)) {
-        inlier_graph_.addEdge(src_tims_map_(0, i), src_tims_map_(1, i));
-      }
-    }
-
+    
     teaser::MaxCliqueSolver::Params clique_params;
 
     if (params_.inlier_selection_mode == INLIER_SELECTION_MODE::PMC_EXACT) {
@@ -580,12 +596,6 @@ teaser::RobustRegistrationSolver::solve(const Eigen::Matrix<double, 3, Eigen::Dy
       TEASER_DEBUG_INFO_MSG("Clique size too small. Abort.");
       solution_.valid = false;
       return solution_;
-    }
-  } else {
-    // not using clique filtering is equivalent to saying all measurements are in the max clique
-    max_clique_.reserve(src.cols());
-    for (size_t i = 0; i < src.cols(); ++i) {
-      max_clique_.push_back(i);
     }
   }
 

@@ -500,6 +500,10 @@ Eigen::Matrix<double, 3, Eigen::Dynamic>
 computeTIMs(const Eigen::Matrix<double, 3, Eigen::Dynamic>& v,
                                               Eigen::Matrix<int, 2, Eigen::Dynamic>* map);
 
+  void computeTIMsAndScale(const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
+                           const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst,
+                           double* scale);
+
   /**
    * Solve for scale, translation and rotation.
    *
