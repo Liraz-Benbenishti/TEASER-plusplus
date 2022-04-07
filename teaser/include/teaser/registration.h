@@ -188,7 +188,7 @@ public:
                      const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst, double* scale,
                      Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) override;
 
-    void solveForScaleMemoryOpt(const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
+  void solveForScaleMemoryOpt(const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
                      const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst, double* scale,
                      Eigen::Matrix<bool, 1, Eigen::Dynamic>* inliers) override;
 
@@ -334,6 +334,9 @@ public:
  */
 class RobustRegistrationSolver {
 public:
+double noise_bound_;
+double cbar2_;
+
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
   /**
@@ -499,7 +502,7 @@ public:
 Eigen::Matrix<double, 3, Eigen::Dynamic>
 computeTIMs(const Eigen::Matrix<double, 3, Eigen::Dynamic>& v,
                                               Eigen::Matrix<int, 2, Eigen::Dynamic>* map);
-
+  
   void computeTIMsAndScale(const Eigen::Matrix<double, 3, Eigen::Dynamic>& src,
                            const Eigen::Matrix<double, 3, Eigen::Dynamic>& dst,
                            double* scale);
@@ -758,6 +761,9 @@ computeTIMs(const Eigen::Matrix<double, 3, Eigen::Dynamic>& v,
    */
   void reset(const Params& params) {
     params_ = params;
+    
+    noise_bound_ = params.noise_bound;
+    cbar2_ = params.cbar2;
 
     // Initialize the scale estimator
     if (params_.estimate_scaling) {

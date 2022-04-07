@@ -375,12 +375,11 @@ void teaser::ScaleInliersSelector::solveForScaleMemoryOpt(
   inlier_graph_.populateVertices(src.cols());
   double v1, v2;
   int N = src.cols();
-  double beta = 0.1;// * noise_bound * sqrt(cbar2);
+  double beta = 2 * noise_bound_ * sqrt(cbar2_);
 
   // A pair-wise correspondence is an inlier if it passes the following test:
   // abs(|dst| - |src|) is within maximum allowed error
 
-  //int counter = 0;
   for (int cloud_i = 0; cloud_i < N; cloud_i++) {
       Eigen::Matrix<double, 3, 1> s_i = src.col(cloud_i);
       Eigen::Matrix<double, 3, 1> d_i = dst.col(cloud_i);
@@ -676,7 +675,7 @@ double teaser::RobustRegistrationSolver::solveForScale(
       int N = v1.cols();
   scale_inliers_mask_.resize(1, N * (N - 1) / 2);
   scale_solver_->solveForScaleMemoryOpt(v1, v2, &(solution_.scale), &scale_inliers_mask_);
-  return solution_.scale;
+   return solution_.scale;
 }
 
 Eigen::Vector3d teaser::RobustRegistrationSolver::solveForTranslation(
