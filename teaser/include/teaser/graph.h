@@ -94,10 +94,6 @@ public:
    * @param [in] vertex_2 another vertex of the edge
    */
   void addEdge(const int& vertex_1, const int& vertex_2) {
-    if (hasEdge(vertex_1, vertex_2)) {
-      TEASER_DEBUG_ERROR_MSG("Edge exists.");
-      return;
-    }
     adj_list_[vertex_1].push_back(vertex_2);
     adj_list_[vertex_2].push_back(vertex_1);
     num_edges_++;

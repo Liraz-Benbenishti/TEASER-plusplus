@@ -373,7 +373,7 @@ void teaser::ScaleInliersSelector::solveForScaleMemoryOpt(
   // We assume no scale difference between the two vectors of points.
   *scale = 1;
   inlier_graph_.populateVertices(src.cols());
-  double v1, v2, dist_diff;
+  double v1, v2;
   int N = src.cols();
   double beta = 0.1;// * noise_bound * sqrt(cbar2);
 
@@ -382,12 +382,13 @@ void teaser::ScaleInliersSelector::solveForScaleMemoryOpt(
 
   //int counter = 0;
   for (int cloud_i = 0; cloud_i < N; cloud_i++) {
+      Eigen::Matrix<double, 3, 1> s_i = src.col(cloud_i);
+      Eigen::Matrix<double, 3, 1> d_i = dst.col(cloud_i);
     for (int cloud_j = cloud_i + 1; cloud_j < N; cloud_j++) {
-      v1 = (src.col(cloud_i).array() - src.col(cloud_j).array()).array().square().colwise().sum().array().sqrt().array().eval()(0);
-      v2 = (dst.col(cloud_i).array() - dst.col(cloud_j).array()).array().square().colwise().sum().array().sqrt().array().eval()(0);
-      dist_diff =  abs(v1 - v2);
+      v1 = (s_i - src.col(cloud_j)).norm();
+      v2 = (d_i - dst.col(cloud_j)).norm();
 
-      if (dist_diff <= beta) {
+      if (abs(v1 - v2) <= beta) {
         inlier_graph_.addEdge(cloud_i, cloud_j);
       }
     }
